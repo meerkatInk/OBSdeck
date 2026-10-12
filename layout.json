@@ -1,0 +1,72 @@
+{
+ "pages": [
+  {
+   "name": "Main",
+   "buttons": [
+    {
+     "label": "Mic",
+     "type": "mute",
+     "target": "Mic/Aux",
+     "color": "#e5484d"
+    },
+    {
+     "label": "Desktop",
+     "type": "mute",
+     "target": "Desktop Audio",
+     "color": "#f76b15"
+    },
+    {
+     "label": "Stream",
+     "type": "stream",
+     "color": "#8e4ec6"
+    },
+    {
+     "label": "Record",
+     "type": "record",
+     "color": "#e5484d"
+    },
+    {
+     "label": "Pause Rec",
+     "type": "pause",
+     "color": "#f5a524"
+    },
+    {
+     "label": "Replay",
+     "type": "replay",
+     "color": "#30a46c"
+    },
+    {
+     "label": "Screenshot",
+     "type": "screenshot",
+     "color": "#12a594"
+    },
+    {
+     "label": "Mic",
+     "type": "volume",
+     "target": "Mic/Aux",
+     "color": "#e5484d"
+    },
+    {
+     "label": "Desktop",
+     "type": "volume",
+     "target": "Desktop Audio",
+     "color": "#f76b15"
+    }
+   ]
+  }
+ ],
+ "settings": {
+  "thumbs": true,
+  "thumbInterval": 3,
+  "stats": true,
+  "studioPreview": true,
+  "prevPage": {
+   "kind": "pad",
+   "index": 4
+  },
+  "nextPage": {
+   "kind": "pad",
+   "index": 5
+  }
+ }
+}

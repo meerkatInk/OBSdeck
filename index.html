@@ -1,0 +1,1600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>OBS Deck</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #181b22;
+    --tile: #1f232c;
+    --border: #2e3440;
+    --text: #e8eaf0;
+    --muted: #8a91a3;
+    --ok: #30a46c;
+    --warn: #f5a524;
+    --bad: #e5484d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    user-select: none; overflow-x: hidden;
+  }
+  header {
+    height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 16px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .3px; white-space: nowrap; }
+  .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; min-width: 0; }
+  .status span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.wait { background: var(--warn); }
+  .spacer { flex: 1; }
+  .hbtn {
+    background: var(--tile); color: var(--text); border: 1px solid var(--border);
+    border-radius: 10px; height: 40px; padding: 0 14px; font: inherit; cursor: pointer; white-space: nowrap;
+  }
+  .hbtn.on { background: var(--warn); color: #111; border-color: var(--warn); }
+  .hbtn.sm { height: 34px; padding: 0 10px; }
+
+  #tabs {
+    position: sticky; top: 56px; z-index: 4; display: flex; gap: 8px; align-items: center;
+    padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--border); overflow-x: auto;
+  }
+  .tab {
+    flex: none; height: 36px; padding: 0 16px; border-radius: 18px; border: 1px solid var(--border);
+    background: var(--tile); color: var(--muted); font: inherit; cursor: pointer;
+  }
+  .tab.on { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
+  .tab.add-tab { border-style: dashed; }
+
+  main {
+    padding: 16px; display: grid; gap: 12px; touch-action: pan-y;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  body.has-stats main { padding-bottom: 64px; }
+  .btn {
+    --c: #5b8def;
+    position: relative; aspect-ratio: 1 / 1; border-radius: 16px;
+    background-color: var(--tile); border: 2px solid var(--border); background-size: cover; background-position: center;
+    color: var(--text); font: inherit; cursor: pointer; padding: 12px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    transition: transform .06s, background-color .15s, border-color .15s, box-shadow .15s;
+    overflow: hidden;
+  }
+  .btn::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--c); }
+  .btn:active, .btn.pressed { transform: scale(.95); }
+  .icon { height: 48px; display: flex; align-items: center; justify-content: center; }
+  .icon svg, .vmute svg { width: 46px; height: 46px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon img { width: 52px; height: 52px; object-fit: cover; border-radius: 10px; }
+  .icon .emoji { font-size: 40px; line-height: 1; }
+  .btn .label { font-weight: 600; font-size: 17px; text-align: center; word-break: break-word; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .btn .sub { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; min-height: 15px; text-align: center; }
+  .btn .bind { position: absolute; right: 8px; bottom: 10px; font-size: 11px; color: var(--muted); }
+  .btn.active { background-color: var(--c); border-color: var(--c); box-shadow: 0 0 22px color-mix(in srgb, var(--c) 55%, transparent); }
+  .btn.active .sub, .btn.active .bind, .btn.thumb .sub { color: rgba(255,255,255,.88); }
+  .btn.active::before { display: none; }
+  .btn.preview { border-color: var(--ok); border-style: dashed; }
+  .btn.missing { opacity: .45; }
+  .btn.confirm { animation: pulse .5s infinite alternate; border-color: var(--warn); }
+  .btn.flash { background-color: var(--c); }
+  .btn.err { border-color: var(--bad); }
+  .btn.running { opacity: .75; }
+  .btn.talking { animation: pulse .4s infinite alternate; }
+  .btn.thumb .icon { display: none; }
+  .btn.thumb.active { box-shadow: 0 0 0 3px var(--c), 0 0 22px var(--c); }
+  @keyframes pulse { to { box-shadow: 0 0 24px var(--warn); } }
+  body.editing .btn { border-style: dashed; }
+  body.editing .btn > * { pointer-events: none; }
+  body.offline .btn:not(.add) { opacity: .6; }
+  .add { border-style: dashed !important; color: var(--muted); font-size: 44px; }
+  .add::before { display: none; }
+
+  .meter { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: rgba(0,0,0,.35); --lv: 0; }
+  .meter i {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, #30a46c 0 70%, #f5a524 70% 88%, #e5484d 88%);
+    clip-path: inset(0 calc(100% - var(--lv) * 100%) 0 0); transition: clip-path .06s linear;
+  }
+  .meter.dim i { background: #6f7787; }
+
+  .btn.vol { grid-column: span 2; aspect-ratio: auto; min-height: 140px; align-items: stretch; justify-content: center; gap: 14px; padding: 14px 18px 18px; cursor: default; }
+  .vhead { display: flex; align-items: center; gap: 12px; }
+  .vhead .label { flex: 1; text-align: left; }
+  .vhead .db { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .vmute { flex: none; width: 56px; height: 56px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .vmute svg { width: 30px; height: 30px; }
+  .btn.vol.muted .vmute { background: var(--bad); border-color: var(--bad); }
+  .btn.vol .meter { position: static; height: 8px; border-radius: 4px; overflow: hidden; }
+  .btn.vol input[type=range] { width: 100%; height: 36px; accent-color: var(--c); margin: 0; }
+  @media (max-width: 340px) { .btn.vol { grid-column: span 1; } }
+
+  #stats {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; min-height: 44px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 8px 16px;
+    background: var(--panel); border-top: 1px solid var(--border); font-size: 14px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  #stats b { color: var(--text); font-weight: 600; }
+  #stats .live { color: var(--bad); }
+  #stats .warn { color: var(--warn); }
+  #stats .bad { color: var(--bad); font-weight: 600; }
+
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
+    align-items: center; justify-content: center; z-index: 10; padding: 16px;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    width: 100%; max-width: 640px; max-height: 100%; overflow: auto; padding: 20px;
+  }
+  .modal h2 { margin: 0 0 14px; font-size: 18px; }
+  .modal h2:not(:first-child) { margin-top: 22px; }
+  .field { margin-bottom: 12px; }
+  .field > label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; height: 44px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; font: inherit;
+  }
+  .field textarea { height: 120px; padding: 10px; font-family: ui-monospace, monospace; font-size: 12px; user-select: text; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .row > .field { flex: 1; min-width: 140px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .actions .hbtn.primary { background: #5b8def; border-color: #5b8def; color: #fff; }
+  .hbtn.danger { color: var(--bad); }
+  .hint { color: var(--muted); font-size: 13px; }
+  .check { display: flex; gap: 10px; align-items: center; margin: 10px 0; cursor: pointer; }
+  .check input { width: 22px; height: 22px; accent-color: #5b8def; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .swatch { width: 36px; height: 36px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+  .swatch.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
+  .swatches input[type=color] { width: 44px; height: 36px; padding: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+  .imgprev { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
+  .imgprev:not([src]), .imgprev[src=""] { display: none; }
+  #steps { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 10px; }
+  .step { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 0; background: var(--bg); }
+  .step .field input, .step .field select { background: var(--panel); }
+  .stephead { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .bindrow { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .bindrow > span:first-child { width: 120px; color: var(--muted); }
+  .bindrow > span.hint { flex: 1; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 16px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px);
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>OBS Deck</h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">Disconnected</span></div>
+  <div class="spacer"></div>
+  <button class="hbtn" id="editBtn">Edit</button>
+  <button class="hbtn" id="settingsBtn">Settings</button>
+  <button class="hbtn" id="fsBtn" title="Fullscreen">⛶</button>
+</header>
+<nav id="tabs" hidden></nav>
+<main id="grid"></main>
+<footer id="stats" hidden></footer>
+
+<!-- Button editor -->
+<div class="modal-bg" id="editModal">
+  <div class="modal">
+    <h2 id="editTitle">Edit button</h2>
+    <div class="row">
+      <div class="field" style="flex:3"><label>Label</label><input id="fLabel" maxlength="24"></div>
+      <div class="field"><label>Page</label><select id="fPage"></select></div>
+    </div>
+    <div class="field"><label>Color</label><div class="swatches" id="swatches"></div></div>
+    <div class="row">
+      <div class="field"><label>Icon</label><select id="fIcon"></select></div>
+      <div class="field"><label>…or emoji / text</label><input id="fEmoji" maxlength="8" placeholder="e.g. ☕"></div>
+      <div class="field" style="flex:0 0 auto"><label>…or image</label>
+        <div class="row"><button class="hbtn" id="imgBtn">Choose…</button><button class="hbtn" id="imgClear">✕</button><img id="imgPrev" class="imgprev" alt=""></div>
+      </div>
+    </div>
+    <input type="file" id="imgFile" accept="image/*" hidden>
+    <div id="actionHost"></div>
+    <div id="macroWrap">
+      <div class="hint">Steps run top to bottom.</div>
+      <div id="steps"></div>
+      <button class="hbtn" id="addStep">+ Add step</button>
+      <label class="check"><input type="checkbox" id="fUndo"> Tap again to undo (mutes, scene, visibility, filters, volume, virtual camera and studio mode go back to how they were)</label>
+    </div>
+    <div class="field">
+      <label>Controller / keyboard shortcut</label>
+      <div class="row">
+        <span id="bindText" class="hint" style="flex:1">None</span>
+        <button class="hbtn" id="bindBtn">Bind…</button>
+        <button class="hbtn" id="unbindBtn">Clear</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="hbtn primary" id="saveBtn">Save</button>
+      <button class="hbtn" id="cancelBtn">Cancel</button>
+      <div class="spacer"></div>
+      <button class="hbtn" id="leftBtn">◀</button>
+      <button class="hbtn" id="rightBtn">▶</button>
+      <button class="hbtn" id="dupBtn">Duplicate</button>
+      <button class="hbtn danger" id="deleteBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Page editor -->
+<div class="modal-bg" id="pageModal">
+  <div class="modal" style="max-width:460px">
+    <h2>Page</h2>
+    <div class="field"><label>Name</label><input id="pName" maxlength="20"></div>
+    <div class="actions">
+      <button class="hbtn primary" id="pSave">Save</button>
+      <button class="hbtn" id="pCancel">Cancel</button>
+      <div class="spacer"></div>
+      <button class="hbtn" id="pLeft">◀</button>
+      <button class="hbtn" id="pRight">▶</button>
+      <button class="hbtn danger" id="pDelete">Delete page</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="modal-bg" id="settingsModal">
+  <div class="modal">
+    <h2>Connection</h2>
+    <div class="row">
+      <div class="field" style="flex:3"><label>OBS PC address (IP)</label><input id="sHost" placeholder="192.168.1.50"></div>
+      <div class="field"><label>Port</label><input id="sPort" inputmode="numeric" placeholder="4455"></div>
+    </div>
+    <div class="field"><label>Password (OBS → Tools → WebSocket Server Settings)</label><input id="sPass" type="password"></div>
+    <div class="actions">
+      <button class="hbtn primary" id="connectBtn">Connect</button>
+      <button class="hbtn" id="disconnectBtn">Disconnect</button>
+      <button class="hbtn" id="addScenesBtn">Add a button for every scene</button>
+    </div>
+
+    <h2>Display</h2>
+    <label class="check"><input type="checkbox" id="sThumbs"> Show live previews on scene buttons</label>
+    <div class="field" style="max-width:260px"><label>Preview refresh</label>
+      <select id="sThumbInt"><option value="1">Every second</option><option value="2">Every 2 seconds</option><option value="3">Every 3 seconds</option><option value="5">Every 5 seconds</option><option value="10">Every 10 seconds</option></select>
+    </div>
+    <label class="check"><input type="checkbox" id="sStats"> Show the stream stats bar</label>
+    <label class="check"><input type="checkbox" id="sStudioPreview"> In Studio Mode, scene buttons pick the preview scene (use a Transition button to go live)</label>
+
+    <h2>Page switching</h2>
+    <div class="bindrow"><span>Previous page</span><span class="hint" id="sPrevText"></span><button class="hbtn sm" id="sPrevBind">Bind…</button><button class="hbtn sm" id="sPrevClear">Clear</button></div>
+    <div class="bindrow"><span>Next page</span><span class="hint" id="sNextText"></span><button class="hbtn sm" id="sNextBind">Bind…</button><button class="hbtn sm" id="sNextClear">Clear</button></div>
+    <div class="hint">You can also swipe left or right on the buttons.</div>
+
+    <h2>Backup</h2>
+    <p class="hint" id="storageHint"></p>
+    <div class="field"><label>Layout JSON (copy to back up, paste and Import to restore)</label><textarea id="sJson" spellcheck="false"></textarea></div>
+    <div class="actions">
+      <button class="hbtn" id="importBtn">Import</button>
+      <button class="hbtn danger" id="resetBtn">Reset layout</button>
+      <div class="spacer"></div>
+      <button class="hbtn" id="closeSettingsBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ---------------- SHA-256 (pure JS: crypto.subtle isn't available on plain http/file pages) ---------------- */
+const SHA_K = [], SHA_H0 = [];
+(() => {
+  const frac = x => (x - Math.floor(x)) * 0x100000000 >>> 0;
+  for (let n = 2, found = 0; found < 64; n++) {
+    let prime = true;
+    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
+    if (!prime) continue;
+    if (found < 8) SHA_H0.push(frac(Math.sqrt(n)));
+    SHA_K.push(frac(Math.cbrt(n)));
+    found++;
+  }
+})();
+function sha256(str) {
+  const bytes = new TextEncoder().encode(str);
+  const len = bytes.length, n = ((len + 9 + 63) >> 6) << 6;
+  const m = new Uint8Array(n); m.set(bytes); m[len] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(n - 4, (len * 8) >>> 0);
+  dv.setUint32(n - 8, Math.floor(len / 0x20000000));
+  const ror = (x, r) => (x >>> r) | (x << (32 - r));
+  const H = SHA_H0.slice(), w = new Uint32Array(64);
+  for (let i = 0; i < n; i += 64) {
+    for (let t = 0; t < 16; t++) w[t] = dv.getUint32(i + t * 4);
+    for (let t = 16; t < 64; t++) {
+      const x = w[t - 15], y = w[t - 2];
+      w[t] = w[t - 16] + (ror(x, 7) ^ ror(x, 18) ^ (x >>> 3)) + w[t - 7] + (ror(y, 17) ^ ror(y, 19) ^ (y >>> 10));
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let t = 0; t < 64; t++) {
+      const t1 = (h + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + SHA_K[t] + w[t]) | 0;
+      const t2 = ((ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  const out = new Uint8Array(32), odv = new DataView(out.buffer);
+  H.forEach((v, i) => odv.setUint32(i * 4, v >>> 0));
+  return out;
+}
+const b64 = bytes => btoa(String.fromCharCode(...bytes));
+function obsAuth(password, salt, challenge) {
+  return b64(sha256(b64(sha256(password + salt)) + challenge));
+}
+
+/* ---------------- Helpers ---------------- */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k in el && k !== 'list') el[k] = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+  return el;
+}
+function throttle(fn, ms) {
+  let last = 0, timer = null, args;
+  return (...a) => {
+    args = a;
+    const wait = ms - (Date.now() - last);
+    if (wait <= 0) { last = Date.now(); fn(...args); }
+    else if (!timer) timer = setTimeout(() => { timer = null; last = Date.now(); fn(...args); }, wait);
+  };
+}
+const mulToDb = m => m > 0 ? Math.max(-100, 20 * Math.log10(m)) : -100;
+const dbToMul = d => d <= -100 ? 0 : Math.pow(10, d / 20);
+const fmtDb = d => d <= -99.9 ? '−∞ dB' : `${d.toFixed(1)} dB`;
+const fmtTc = tc => (tc || '00:00:00').split('.')[0];
+
+let toastTimer;
+function toast(text) {
+  const t = $('toast');
+  t.textContent = text; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+/* ---------------- Icons ---------------- */
+const ICONS = {
+  mic: '<path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/>',
+  micOff: '<path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3M3 3l18 18"/>',
+  volume: '<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+  volumeOff: '<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9l5 6M21 9l-5 6"/>',
+  scene: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/>',
+  stream: '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/>',
+  record: '<circle cx="12" cy="12" r="7"/>',
+  recordOn: '<circle cx="12" cy="12" r="7" fill="currentColor"/>',
+  pause: '<path d="M9 6v12M15 6v12"/>',
+  play: '<path d="M7 4l13 8-13 8z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1"/>',
+  next: '<path d="M5 5l10 7-10 7z"/><path d="M19 5v14"/>',
+  prev: '<path d="M19 5L9 12l10 7z"/><path d="M5 5v14"/>',
+  replay: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  restart: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/>',
+  filter: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
+  camera: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/>',
+  screenshot: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  studio: '<rect x="2" y="6" width="9" height="7" rx="1"/><rect x="13" y="6" width="9" height="7" rx="1"/><path d="M6 17h12"/>',
+  transition: '<path d="M4 12h15M13 6l6 6-6 6"/>',
+  keyboard: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
+  folder: '<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+  back: '<path d="M15 5l-7 7 7 7"/>',
+  star: '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z"/>',
+  heart: '<path d="M12 20s-8-4.9-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6.1-8 11-8 11z"/>',
+  music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  coffee: '<path d="M4 8h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 10h2a2 2 0 0 1 0 4h-2M8 2v3M12 2v3"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+  bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  gamepad: '<path d="M6 8h12a4 4 0 0 1 4 4v1a3 3 0 0 1-5.4 1.8L15 13H9l-1.6 1.8A3 3 0 0 1 2 13v-1a4 4 0 0 1 4-4z"/><path d="M7 10v3M5.5 11.5h3M16 11h.01M18 12.5h.01"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
+};
+const ICON_NAMES = {
+  mic: 'Microphone', micOff: 'Mic off', volume: 'Speaker', volumeOff: 'Speaker off', scene: 'Scene', stream: 'Broadcast',
+  record: 'Record', pause: 'Pause', play: 'Play', stop: 'Stop', next: 'Next', prev: 'Previous', replay: 'Replay',
+  restart: 'Restart', eye: 'Eye', eyeOff: 'Eye off', filter: 'Sparkles', camera: 'Camera', screenshot: 'Photo',
+  studio: 'Studio', transition: 'Arrow', keyboard: 'Keyboard', layers: 'Layers', folder: 'Folder', back: 'Back',
+  star: 'Star', heart: 'Heart', music: 'Music', coffee: 'Coffee', chat: 'Chat', bolt: 'Lightning', gamepad: 'Gamepad',
+  flag: 'Flag', user: 'Person', bell: 'Bell',
+};
+const svg = name => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.scene}</svg>`;
+
+/* ---------------- Action types ----------------
+   Every button is an action. Multi-action buttons hold a list of actions ("steps").
+   mode: 'toggle' | 'on' | 'off' (on = muted / shown / enabled / started / paused). */
+const TOGGLE = (on, off, both = 'Toggle') => [['toggle', both], ['on', on], ['off', off]];
+const TYPES = {
+  mute:       { name: 'Mute / unmute audio', target: ['input', 'Audio source'], modes: TOGGLE('Mute', 'Unmute') },
+  ptt:        { name: 'Push-to-talk (hold to unmute)', target: ['input', 'Audio source'], buttonOnly: true },
+  volume:     { name: 'Volume slider', stepName: 'Set volume', target: ['input', 'Audio source'], db: true },
+  scene:      { name: 'Switch scene', target: ['scene', 'Scene'] },
+  visibility: { name: 'Show / hide a source', scene: true, target: ['sceneItem', 'Source'], modes: TOGGLE('Show', 'Hide') },
+  filter:     { name: 'Turn a filter on / off', target: ['source', 'Source (or scene) with the filter'], filter: true, modes: TOGGLE('Turn on', 'Turn off') },
+  media:      { name: 'Control a media source', target: ['input', 'Media source'],
+                modes: [['playpause', 'Play / pause'], ['restart', 'Restart'], ['stop', 'Stop'], ['next', 'Next in playlist'], ['previous', 'Previous in playlist']] },
+  stream:     { name: 'Streaming', modes: TOGGLE('Start', 'Stop', 'Start / stop') },
+  record:     { name: 'Recording', modes: TOGGLE('Start', 'Stop', 'Start / stop') },
+  pause:      { name: 'Pause recording', modes: TOGGLE('Pause', 'Resume', 'Pause / resume') },
+  vcam:       { name: 'Virtual camera', modes: TOGGLE('Start', 'Stop', 'Start / stop') },
+  studio:     { name: 'Studio mode', modes: TOGGLE('Turn on', 'Turn off', 'On / off') },
+  transition: { name: 'Studio mode transition (preview → live)' },
+  replay:     { name: 'Save replay buffer' },
+  screenshot: { name: 'Screenshot (saved to your recording folder)', target: ['sourceOpt', 'Source (blank = what’s live)'] },
+  hotkey:     { name: 'OBS hotkey', target: ['hotkey', 'Hotkey name'] },
+  page:       { name: 'Go to page', target: ['page', 'Page'] },
+  multi:      { name: 'Multi-action (several steps)', buttonOnly: true },
+  delay:      { name: 'Wait', stepOnly: true, ms: true },
+};
+
+/* ---------------- Config ---------------- */
+const STORE_KEY = 'obsdeck.v1';
+const DEFAULT_BUTTONS = [
+  { label: 'Mic', type: 'mute', target: 'Mic/Aux', color: '#e5484d' },
+  { label: 'Desktop', type: 'mute', target: 'Desktop Audio', color: '#f76b15' },
+  { label: 'Stream', type: 'stream', color: '#8e4ec6' },
+  { label: 'Record', type: 'record', color: '#e5484d' },
+  { label: 'Pause Rec', type: 'pause', color: '#f5a524' },
+  { label: 'Replay', type: 'replay', color: '#30a46c' },
+  { label: 'Screenshot', type: 'screenshot', color: '#12a594' },
+  { label: 'Mic', type: 'volume', target: 'Mic/Aux', color: '#e5484d' },
+  { label: 'Desktop', type: 'volume', target: 'Desktop Audio', color: '#f76b15' },
+];
+const DEFAULT_SETTINGS = {
+  thumbs: true, thumbInterval: 3, stats: true, studioPreview: true,
+  prevPage: { kind: 'pad', index: 4 }, nextPage: { kind: 'pad', index: 5 },
+};
+const defaultPages = () => [{ name: 'Main', buttons: structuredClone(DEFAULT_BUTTONS) }];
+
+function normalizeLayout(data) {
+  if (Array.isArray(data)) data = { pages: [{ name: 'Main', buttons: data }] };   // old single-page backup
+  if (!data || typeof data !== 'object') data = {};
+  let pages = data.pages;
+  if (!Array.isArray(pages) && Array.isArray(data.buttons)) pages = [{ name: 'Main', buttons: data.buttons }];
+  if (!Array.isArray(pages) || !pages.length) pages = defaultPages();
+  pages = pages.map((p, k) => ({ name: String(p?.name || `Page ${k + 1}`), buttons: Array.isArray(p?.buttons) ? p.buttons : [] }));
+  return { pages, settings: Object.assign({}, DEFAULT_SETTINGS, data.settings) };
+}
+let config = loadConfig();
+function loadConfig() {
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem(STORE_KEY)); } catch {}
+  const conn = Object.assign({ host: '', port: 4455, password: '' }, c?.conn);
+  return Object.assign({ conn }, normalizeLayout(c));
+}
+const layoutData = () => ({ pages: config.pages, settings: config.settings });
+
+// When the page is served by serve.py, the layout also lives on the PC (so every device shares it).
+// The connection details stay in this browser only.
+let serverMode = false, putTimer = null;
+function saveLocal() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(config)); } catch {}
+}
+function saveConfig() {
+  saveLocal();
+  if (serverMode) { clearTimeout(putTimer); putTimer = setTimeout(pushLayout, 400); }
+}
+async function pushLayout() {
+  try {
+    const r = await fetch('api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(layoutData()) });
+    if (!r.ok) throw new Error();
+  } catch { toast('Couldn’t save the layout to the PC'); }
+}
+async function initServer() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const r = await fetch('api/layout', { cache: 'no-store' });
+    if (!r.ok) return;
+    const data = await r.json();
+    serverMode = true;
+    if (data && Array.isArray(data.pages)) { Object.assign(config, normalizeLayout(data)); saveLocal(); }
+    else pushLayout();   // first run: put this browser's layout on the PC
+    if (!config.conn.host) {
+      config.conn.host = location.hostname;
+      const info = await fetch('api/info', { cache: 'no-store' }).then(x => x.json()).catch(() => ({}));
+      if (info.obsPort) config.conn.port = info.obsPort;
+      saveLocal();
+    }
+  } catch {}
+}
+
+/* ---------------- OBS state ---------------- */
+const obs = {
+  scenes: [], inputs: [], current: '', preview: '', studio: false,
+  streaming: false, recording: false, recPaused: false, vcam: false,
+  mute: {},     // inputName -> bool
+  volume: {},   // inputName -> dB
+  vis: {},      // "scene\0source" -> { id, enabled }
+  filters: {},  // "source\0filter" -> bool
+  media: {},    // inputName -> OBS media state
+  levels: {},   // inputName -> { peak, input } (0..1 multipliers)
+  thumbs: {},   // sceneName -> data: URL
+  hotkeys: [],
+  streamStat: null, recStat: null, stats: null, kbps: null,
+};
+const pairKey = (a, b) => a + '\u0000' + b;
+
+/* ---------------- obs-websocket v5 client ---------------- */
+let ws = null, identified = false, reqSeq = 0, retryTimer = null, wantConnected = false;
+const pending = new Map();
+const EVENTS_ALL_AND_METERS = 2047 | (1 << 16);
+
+function setStatus(kind, text) {
+  $('dot').className = 'dot ' + (kind === 'ok' ? 'ok' : kind === 'wait' ? 'wait' : '');
+  $('statusText').textContent = text;
+  document.body.classList.toggle('offline', kind !== 'ok');
+}
+
+function connect() {
+  clearTimeout(retryTimer);
+  const { host, port } = config.conn;
+  if (!host) { setStatus('bad', 'Set the OBS PC address in Settings'); return; }
+  wantConnected = true;
+  if (ws) { ws.onclose = null; ws.close(); }
+  identified = false;
+  setStatus('wait', `Connecting to ${host}:${port}…`);
+  try { ws = new WebSocket(`ws://${host}:${port}`); }
+  catch { setStatus('bad', 'Bad address'); return; }
+
+  ws.onmessage = ev => {
+    const msg = JSON.parse(ev.data), d = msg.d;
+    if (msg.op === 0) {                       // Hello
+      const identify = { rpcVersion: 1, eventSubscriptions: EVENTS_ALL_AND_METERS };
+      if (d.authentication) identify.authentication = obsAuth(config.conn.password, d.authentication.salt, d.authentication.challenge);
+      ws.send(JSON.stringify({ op: 1, d: identify }));
+    } else if (msg.op === 2) {                // Identified
+      identified = true;
+      setStatus('ok', `Connected · ${host}`);
+      refreshAll();
+    } else if (msg.op === 5) {                // Event
+      onEvent(d.eventType, d.eventData || {});
+    } else if (msg.op === 7) {                // RequestResponse
+      const p = pending.get(d.requestId);
+      if (!p) return;
+      pending.delete(d.requestId);
+      if (d.requestStatus.result) p.resolve(d.responseData || {});
+      else p.reject(new Error(d.requestStatus.comment || `OBS error ${d.requestStatus.code}`));
+    }
+  };
+  ws.onclose = ev => {
+    identified = false;
+    for (const p of pending.values()) p.reject(new Error('Disconnected'));
+    pending.clear();
+    obs.levels = {};
+    updateTiles(); scheduleMeters();
+    if (ev.code === 4009) { setStatus('bad', 'Wrong password'); wantConnected = false; return; }
+    if (!wantConnected) { setStatus('bad', 'Disconnected'); return; }
+    setStatus('bad', 'Can’t reach OBS, retrying…');
+    retryTimer = setTimeout(connect, 3000);
+  };
+}
+function disconnect() {
+  wantConnected = false;
+  clearTimeout(retryTimer);
+  if (ws) ws.close();
+}
+function call(requestType, requestData = {}) {
+  return new Promise((resolve, reject) => {
+    if (!ws || !identified) return reject(new Error('Not connected to OBS'));
+    const requestId = String(++reqSeq);
+    pending.set(requestId, { resolve, reject });
+    ws.send(JSON.stringify({ op: 6, d: { requestType, requestId, requestData } }));
+    setTimeout(() => { if (pending.delete(requestId)) reject(new Error('OBS did not respond')); }, 5000);
+  });
+}
+
+const allButtons = () => config.pages.flatMap(p => p.buttons);
+
+async function refreshAll() {
+  const safe = p => p.catch(() => null);
+  const [scenes, inputs, stream, rec, vcam, studio] = await Promise.all([
+    safe(call('GetSceneList')), safe(call('GetInputList')), safe(call('GetStreamStatus')),
+    safe(call('GetRecordStatus')), safe(call('GetVirtualCamStatus')), safe(call('GetStudioModeEnabled')),
+  ]);
+  if (scenes) {
+    obs.current = scenes.currentProgramSceneName;
+    obs.preview = scenes.currentPreviewSceneName || '';
+    obs.scenes = scenes.scenes.map(s => s.sceneName).reverse(); // OBS lists bottom-up
+  }
+  if (inputs) obs.inputs = inputs.inputs.map(i => i.inputName);
+  if (stream) { obs.streamStat = stream; obs.streaming = stream.outputActive; }
+  if (rec) { obs.recStat = rec; obs.recording = rec.outputActive; obs.recPaused = !!rec.outputPaused; }
+  if (vcam) obs.vcam = vcam.outputActive;
+  if (studio) obs.studio = studio.studioModeEnabled;
+  obs.hotkeys = [];
+  await refreshButtonStates();
+}
+let refreshTimer = null;
+const refreshSoon = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshAll, 300); };
+
+async function lookupVis(scene, source, into = obs.vis) {
+  const { sceneItemId } = await call('GetSceneItemId', { sceneName: scene, sourceName: source });
+  const { sceneItemEnabled } = await call('GetSceneItemEnabled', { sceneName: scene, sceneItemId });
+  return (into[pairKey(scene, source)] = { id: sceneItemId, enabled: sceneItemEnabled });
+}
+async function fetchMedia(name, into = obs.media) {
+  try { into[name] = (await call('GetMediaInputStatus', { inputName: name })).mediaState; } catch {}
+}
+
+// Fetch the state of every source/filter/media the buttons (and macro steps) refer to.
+async function refreshButtonStates() {
+  const inputs = new Set(), vis = new Map(), filters = new Map(), media = new Set();
+  const visit = a => {
+    if (['mute', 'ptt', 'volume'].includes(a.type) && a.target) inputs.add(a.target);
+    if (a.type === 'visibility' && a.scene && a.target) vis.set(pairKey(a.scene, a.target), a);
+    if (a.type === 'filter' && a.target && a.filter) filters.set(pairKey(a.target, a.filter), a);
+    if (a.type === 'media' && a.target) media.add(a.target);
+    if (a.type === 'multi') (a.steps || []).forEach(visit);
+  };
+  allButtons().forEach(visit);
+  const mute = {}, volume = {}, visOut = {}, filtersOut = {}, mediaOut = {};
+  const jobs = [];
+  for (const n of inputs) {
+    jobs.push(call('GetInputMute', { inputName: n }).then(r => { mute[n] = r.inputMuted; }, () => {}));
+    jobs.push(call('GetInputVolume', { inputName: n }).then(r => { volume[n] = r.inputVolumeDb; }, () => {}));
+  }
+  for (const a of vis.values()) jobs.push(lookupVis(a.scene, a.target, visOut).catch(() => {}));
+  for (const [k, a] of filters) {
+    jobs.push(call('GetSourceFilter', { sourceName: a.target, filterName: a.filter })
+      .then(r => { filtersOut[k] = r.filterEnabled; }, () => {}));
+  }
+  for (const n of media) jobs.push(fetchMedia(n, mediaOut));
+  await Promise.all(jobs);
+  Object.assign(obs, { mute, volume, vis: visOut, filters: filtersOut, media: mediaOut });
+  updateTiles();
+}
+
+function onEvent(type, e) {
+  switch (type) {
+    case 'InputVolumeMeters':
+      for (const i of e.inputs) {
+        let peak = 0, input = 0;
+        for (const ch of i.inputLevelsMul) { peak = Math.max(peak, ch[1]); input = Math.max(input, ch[2]); }
+        obs.levels[i.inputName] = { peak, input };
+      }
+      scheduleMeters();
+      return;
+    case 'InputMuteStateChanged': obs.mute[e.inputName] = e.inputMuted; break;
+    case 'InputVolumeChanged': obs.volume[e.inputName] = e.inputVolumeDb; break;
+    case 'CurrentProgramSceneChanged': obs.current = e.sceneName; break;
+    case 'CurrentPreviewSceneChanged': obs.preview = e.sceneName; break;
+    case 'StudioModeStateChanged':
+      obs.studio = e.studioModeEnabled;
+      if (obs.studio) call('GetCurrentPreviewScene').then(r => { obs.preview = r.currentPreviewSceneName; scheduleUpdate(); }, () => {});
+      break;
+    case 'StreamStateChanged': obs.streaming = e.outputActive; break;
+    case 'RecordStateChanged':
+      obs.recording = e.outputActive;
+      if (e.outputState === 'OBS_WEBSOCKET_OUTPUT_PAUSED') obs.recPaused = true;
+      else if (e.outputState === 'OBS_WEBSOCKET_OUTPUT_RESUMED' || !e.outputActive) obs.recPaused = false;
+      break;
+    case 'VirtualcamStateChanged': obs.vcam = e.outputActive; break;
+    case 'SceneItemEnableStateChanged':
+      for (const [k, v] of Object.entries(obs.vis)) {
+        if (k.startsWith(e.sceneName + '\u0000') && v.id === e.sceneItemId) v.enabled = e.sceneItemEnabled;
+      }
+      break;
+    case 'SourceFilterEnableStateChanged': obs.filters[pairKey(e.sourceName, e.filterName)] = e.filterEnabled; break;
+    case 'MediaInputPlaybackStarted': obs.media[e.inputName] = 'OBS_MEDIA_STATE_PLAYING'; break;
+    case 'MediaInputPlaybackEnded': obs.media[e.inputName] = 'OBS_MEDIA_STATE_ENDED'; break;
+    case 'MediaInputActionTriggered':
+      setTimeout(() => fetchMedia(e.inputName).then(scheduleUpdate), 150);
+      return;
+    case 'SceneListChanged': case 'InputCreated': case 'InputRemoved': case 'InputNameChanged':
+    case 'SceneNameChanged': case 'SceneItemCreated': case 'SceneItemRemoved':
+    case 'SourceFilterCreated': case 'SourceFilterRemoved': case 'SourceFilterNameChanged':
+      refreshSoon(); return;
+    default: return;
+  }
+  scheduleUpdate();
+}
+
+/* ---------------- Stats polling (timers, bitrate, dropped frames, CPU) ---------------- */
+let statTick = 0, lastBytes = null;
+setInterval(async () => {
+  if (!identified) return;
+  const wantStats = statTick++ % 2 === 0;
+  const [s, r, st] = await Promise.all([
+    call('GetStreamStatus').catch(() => null), call('GetRecordStatus').catch(() => null),
+    wantStats ? call('GetStats').catch(() => null) : null,
+  ]);
+  const now = performance.now();
+  if (s) {
+    if (s.outputActive && lastBytes && s.outputBytes >= lastBytes.bytes) {
+      const kbps = (s.outputBytes - lastBytes.bytes) * 8 / (now - lastBytes.t);   // bits per ms = kbit/s
+      obs.kbps = obs.kbps == null ? kbps : obs.kbps * 0.6 + kbps * 0.4;
+    } else if (!s.outputActive) obs.kbps = null;
+    lastBytes = s.outputActive ? { bytes: s.outputBytes, t: now } : null;
+    obs.streamStat = s; obs.streaming = s.outputActive;
+  }
+  if (r) { obs.recStat = r; obs.recording = r.outputActive; obs.recPaused = !!r.outputPaused; }
+  if (st) obs.stats = st;
+  scheduleUpdate();
+}, 1000);
+
+function renderStats() {
+  const bar = $('stats');
+  const show = identified && config.settings.stats;
+  bar.hidden = !show;
+  document.body.classList.toggle('has-stats', show);
+  if (!show) return;
+  const parts = [];
+  const s = obs.streamStat, r = obs.recStat, st = obs.stats;
+  if (s?.outputActive) {
+    parts.push(h('span', {}, h('b', { class: 'live' }, '● LIVE '), h('b', {}, fmtTc(s.outputTimecode))));
+    if (s.outputReconnecting) parts.push(h('span', { class: 'bad' }, 'Reconnecting…'));
+    if (obs.kbps != null) parts.push(h('span', {}, obs.kbps >= 1000 ? `${(obs.kbps / 1000).toFixed(1)} Mb/s` : `${Math.round(obs.kbps)} kb/s`));
+    const pct = s.outputTotalFrames ? 100 * s.outputSkippedFrames / s.outputTotalFrames : 0;
+    parts.push(h('span', { class: pct > 5 ? 'bad' : pct > 1 ? 'warn' : '' }, `Dropped ${s.outputSkippedFrames} (${pct.toFixed(1)}%)`));
+  } else parts.push(h('span', {}, 'Stream offline'));
+  if (r?.outputActive) parts.push(h('span', {}, h('b', { class: r.outputPaused ? 'warn' : 'live' }, r.outputPaused ? '❚❚ PAUSED ' : '● REC '), h('b', {}, fmtTc(r.outputTimecode))));
+  if (st) {
+    parts.push(h('span', { class: st.cpuUsage > 80 ? 'warn' : '' }, `CPU ${Math.round(st.cpuUsage)}%`));
+    parts.push(h('span', {}, `${Math.round(st.activeFps)} fps`));
+    const lag = st.renderTotalFrames ? 100 * st.renderSkippedFrames / st.renderTotalFrames : 0;
+    if (lag >= 0.1) parts.push(h('span', { class: lag > 1 ? 'warn' : '' }, `Render lag ${lag.toFixed(1)}%`));
+    if (r?.outputActive && st.availableDiskSpace < 10240) parts.push(h('span', { class: 'warn' }, `Disk ${(st.availableDiskSpace / 1024).toFixed(1)} GB left`));
+  }
+  bar.replaceChildren(...parts);
+}
+
+/* ---------------- Running actions ---------------- */
+const nextState = (mode, cur) => mode === 'on' ? true : mode === 'off' ? false : !cur;
+
+// Runs one action. If `undo` is an array, pushes the action(s) that would put things back.
+async function runAction(a, undo) {
+  const mode = a.mode || 'toggle';
+  switch (a.type) {
+    case 'mute': {
+      const cur = (await call('GetInputMute', { inputName: a.target })).inputMuted, next = nextState(mode, cur);
+      if (next !== cur) await call('SetInputMute', { inputName: a.target, inputMuted: next });
+      undo?.push({ type: 'mute', target: a.target, mode: cur ? 'on' : 'off' });
+      break;
+    }
+    case 'volume': {
+      if (a.db == null || Number.isNaN(+a.db)) break;
+      const cur = (await call('GetInputVolume', { inputName: a.target })).inputVolumeDb;
+      await call('SetInputVolume', { inputName: a.target, inputVolumeDb: clamp(+a.db, -100, 26) });
+      undo?.push({ type: 'volume', target: a.target, db: cur });
+      break;
+    }
+    case 'scene': {
+      const toPreview = obs.studio && config.settings.studioPreview;
+      const prev = toPreview ? obs.preview : obs.current;
+      await call(toPreview ? 'SetCurrentPreviewScene' : 'SetCurrentProgramScene', { sceneName: a.target });
+      if (prev) undo?.push({ type: 'scene', target: prev });
+      break;
+    }
+    case 'visibility': {
+      const v = await lookupVis(a.scene, a.target), next = nextState(mode, v.enabled);
+      if (next !== v.enabled) await call('SetSceneItemEnabled', { sceneName: a.scene, sceneItemId: v.id, sceneItemEnabled: next });
+      undo?.push({ type: 'visibility', scene: a.scene, target: a.target, mode: v.enabled ? 'on' : 'off' });
+      break;
+    }
+    case 'filter': {
+      const cur = (await call('GetSourceFilter', { sourceName: a.target, filterName: a.filter })).filterEnabled;
+      const next = nextState(mode, cur);
+      if (next !== cur) await call('SetSourceFilterEnabled', { sourceName: a.target, filterName: a.filter, filterEnabled: next });
+      undo?.push({ type: 'filter', target: a.target, filter: a.filter, mode: cur ? 'on' : 'off' });
+      break;
+    }
+    case 'media': {
+      let act = { restart: 'RESTART', stop: 'STOP', next: 'NEXT', previous: 'PREVIOUS' }[a.mode];
+      if (!act) {
+        const st = (await call('GetMediaInputStatus', { inputName: a.target })).mediaState;
+        act = st === 'OBS_MEDIA_STATE_PLAYING' ? 'PAUSE'
+          : (st === 'OBS_MEDIA_STATE_ENDED' || st === 'OBS_MEDIA_STATE_STOPPED') ? 'RESTART' : 'PLAY';
+      }
+      await call('TriggerMediaInputAction', { inputName: a.target, mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_' + act });
+      break;
+    }
+    case 'stream': {
+      const cur = (await call('GetStreamStatus')).outputActive, next = nextState(mode, cur);
+      if (next !== cur) await call(next ? 'StartStream' : 'StopStream');
+      break;
+    }
+    case 'record': {
+      const cur = (await call('GetRecordStatus')).outputActive, next = nextState(mode, cur);
+      if (next !== cur) await call(next ? 'StartRecord' : 'StopRecord');
+      break;
+    }
+    case 'pause': {
+      const st = await call('GetRecordStatus');
+      if (!st.outputActive) throw new Error('Not recording');
+      const cur = !!st.outputPaused, next = nextState(mode, cur);
+      if (next !== cur) await call(next ? 'PauseRecord' : 'ResumeRecord');
+      undo?.push({ type: 'pause', mode: cur ? 'on' : 'off' });
+      break;
+    }
+    case 'vcam': {
+      const cur = (await call('GetVirtualCamStatus')).outputActive, next = nextState(mode, cur);
+      if (next !== cur) await call(next ? 'StartVirtualCam' : 'StopVirtualCam');
+      undo?.push({ type: 'vcam', mode: cur ? 'on' : 'off' });
+      break;
+    }
+    case 'studio': {
+      const cur = (await call('GetStudioModeEnabled')).studioModeEnabled, next = nextState(mode, cur);
+      if (next !== cur) await call('SetStudioModeEnabled', { studioModeEnabled: next });
+      undo?.push({ type: 'studio', mode: cur ? 'on' : 'off' });
+      break;
+    }
+    case 'transition':
+      if (!obs.studio) throw new Error('Studio Mode is off');
+      await call('TriggerStudioModeTransition');
+      break;
+    case 'replay':
+      await call('SaveReplayBuffer');
+      toast('Replay saved');
+      break;
+    case 'screenshot': {
+      const dir = (await call('GetRecordDirectory')).recordDirectory;
+      const d = new Date(), pad = n => String(n).padStart(2, '0');
+      const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+      await call('SaveSourceScreenshot', {
+        sourceName: a.target || obs.current, imageFormat: 'png',
+        imageFilePath: `${dir.replace(/[\\/]+$/, '')}/Screenshot ${stamp}.png`,
+      });
+      toast('Screenshot saved to your recording folder');
+      break;
+    }
+    case 'hotkey':
+      await call('TriggerHotkeyByName', { hotkeyName: a.target });
+      break;
+    case 'page': {
+      const k = config.pages.findIndex(p => p.name === a.target);
+      if (k < 0) throw new Error(`No page called "${a.target}"`);
+      goPage(k);
+      break;
+    }
+    case 'delay':
+      await sleep(clamp(+a.ms || 0, 0, 60000));
+      break;
+  }
+}
+
+const confirmUntil = new Map(), running = new Set(), macroUndo = new WeakMap(), pttHeld = new Set();
+const isConfirming = b => confirmUntil.get(b) > Date.now();
+function wouldStop(b) {
+  if (b.type !== 'stream' && b.type !== 'record') return false;
+  const active = b.type === 'stream' ? obs.streaming : obs.recording;
+  return active && (b.mode || 'toggle') !== 'on';
+}
+
+async function pressButton(b) {
+  if (b.type === 'volume' || b.type === 'ptt') return;
+  const t = tiles.find(x => x.b === b);
+  if (t) { t.el.classList.add('pressed'); setTimeout(() => t.el.classList.remove('pressed'), 120); }
+
+  // Stopping a stream/recording by accident is bad: require a second tap.
+  if (wouldStop(b) && !isConfirming(b)) {
+    confirmUntil.set(b, Date.now() + 2500);
+    toast('Tap again to stop'); updateTiles();
+    setTimeout(updateTiles, 2600);
+    return;
+  }
+  confirmUntil.delete(b);
+  if (running.has(b)) return;
+  running.add(b); updateTiles();
+  try {
+    if (b.type === 'multi') await runMacro(b);
+    else await runAction(b, null);
+    if (t && (b.type === 'replay' || b.type === 'screenshot' || b.type === 'hotkey')) {
+      t.el.classList.add('flash'); setTimeout(() => t.el.classList.remove('flash'), 300);
+    }
+  } catch (err) {
+    toast(err.message);
+    if (t) { t.el.classList.add('err'); setTimeout(() => t.el.classList.remove('err'), 1200); }
+  } finally {
+    running.delete(b); updateTiles();
+  }
+}
+
+async function runMacro(b) {
+  const saved = macroUndo.get(b);
+  if (b.undo && saved) {
+    macroUndo.delete(b);
+    for (const a of saved.slice().reverse()) await runAction(a, null);
+    return;
+  }
+  const undo = [];
+  try { for (const s of b.steps || []) await runAction(s, b.undo ? undo : null); }
+  finally { if (b.undo) macroUndo.set(b, undo); }
+}
+
+function pttDown(b) {
+  if (pttHeld.has(b) || !b.target) return;
+  pttHeld.add(b); scheduleUpdate();
+  call('SetInputMute', { inputName: b.target, inputMuted: false }).catch(e => toast(e.message));
+}
+function pttUp(b) {
+  if (!pttHeld.delete(b)) return;
+  scheduleUpdate();
+  call('SetInputMute', { inputName: b.target, inputMuted: true }).catch(e => toast(e.message));
+}
+window.addEventListener('blur', () => [...pttHeld].forEach(pttUp));
+
+/* ---------------- Tiles ---------------- */
+let curPage = 0;
+try { curPage = parseInt(localStorage.getItem('obsdeck.page'), 10) || 0; } catch {}
+let editing = false, tiles = [];
+const page = () => config.pages[curPage];
+
+function goPage(k) {
+  const n = config.pages.length;
+  curPage = ((k % n) + n) % n;
+  try { localStorage.setItem('obsdeck.page', curPage); } catch {}
+  renderLayout();
+}
+
+function renderTabs() {
+  const bar = $('tabs');
+  const show = config.pages.length > 1 || editing;
+  bar.hidden = !show;
+  bar.replaceChildren(...config.pages.map((p, k) => h('button', {
+    class: 'tab' + (k === curPage ? ' on' : ''),
+    onclick: () => (editing && k === curPage) ? openPageEditor(k) : goPage(k),
+  }, p.name)));
+  if (editing) {
+    bar.append(h('button', { class: 'tab add-tab', onclick: addPage }, '+ Page'));
+    bar.append(h('span', { class: 'hint' }, 'Tap the current page again to rename, move or delete it'));
+  }
+}
+
+function renderLayout() {
+  curPage = clamp(curPage, 0, config.pages.length - 1);
+  renderTabs();
+  const grid = $('grid');
+  tiles = page().buttons.map((b, i) => makeTile(b, i));
+  grid.replaceChildren(...tiles.map(t => t.el));
+  if (editing) grid.append(h('button', { class: 'btn add', onclick: () => openEditor(curPage, -1) }, '+'));
+  updateTiles(); scheduleMeters();
+}
+
+function makeTile(b, i) {
+  if (b.type === 'volume') return makeVolumeTile(b, i);
+  const el = h('button', { class: 'btn' });
+  el.style.setProperty('--c', b.color || '#5b8def');
+  const t = { b, el, icon: h('div', { class: 'icon' }), sub: h('div', { class: 'sub' }), iconKey: null, meter: null };
+  el.append(t.icon, h('div', { class: 'label' }, b.label || ''), t.sub, h('div', { class: 'bind' }, b.bind ? bindShort(b.bind) : ''));
+  if (b.type === 'mute' || b.type === 'ptt') { t.meter = h('div', { class: 'meter' }, h('i')); el.append(t.meter); }
+  if (b.type === 'ptt') {
+    el.addEventListener('pointerdown', e => { if (editing) return; el.setPointerCapture(e.pointerId); pttDown(b); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(ev, () => pttUp(b));
+  }
+  el.addEventListener('click', () => editing ? openEditor(curPage, i) : pressButton(b));
+  return t;
+}
+
+function makeVolumeTile(b, i) {
+  const el = h('div', { class: 'btn vol' });
+  el.style.setProperty('--c', b.color || '#5b8def');
+  const t = { b, el, vol: true, dragging: false,
+    muteBtn: h('button', { class: 'vmute', title: 'Mute' }),
+    dbEl: h('span', { class: 'db' }),
+    range: h('input', { type: 'range', min: 0, max: 1000, step: 1 }),
+    meter: h('div', { class: 'meter' }, h('i')) };
+  el.append(h('div', { class: 'vhead' }, t.muteBtn, h('div', { class: 'label' }, b.label || b.target || ''), t.dbEl), t.range, t.meter);
+  // OBS's own faders are cubic, so the slider feels the same as the one in OBS.
+  const send = throttle(v => call('SetInputVolume', { inputName: b.target, inputVolumeMul: (v / 1000) ** 3 }).catch(e => toast(e.message)), 60);
+  t.range.addEventListener('pointerdown', () => { t.dragging = true; });
+  for (const ev of ['pointerup', 'pointercancel', 'change']) t.range.addEventListener(ev, () => { t.dragging = false; });
+  t.range.addEventListener('input', () => {
+    const v = +t.range.value;
+    t.dbEl.textContent = fmtDb(mulToDb((v / 1000) ** 3));
+    send(v);
+  });
+  t.muteBtn.addEventListener('click', () => runAction({ type: 'mute', target: b.target }, null).catch(e => toast(e.message)));
+  el.addEventListener('click', e => { if (editing) { e.stopPropagation(); openEditor(curPage, i); } }, true);
+  return t;
+}
+
+function buttonView(b) {
+  const on = identified;
+  const tc = s => fmtTc(s?.outputTimecode);
+  switch (b.type) {
+    case 'mute': {
+      const m = obs.mute[b.target];
+      if (m === undefined) return { icon: 'mic', sub: on ? 'not found' : '', missing: on };
+      return { icon: m ? 'micOff' : 'mic', sub: m ? 'Muted' : 'Live', active: m };
+    }
+    case 'ptt': {
+      const m = obs.mute[b.target];
+      if (m === undefined) return { icon: 'mic', sub: on ? 'not found' : '', missing: on };
+      return { icon: m ? 'micOff' : 'mic', sub: m ? 'Hold to talk' : 'Talking', active: !m };
+    }
+    case 'scene': {
+      const exists = obs.scenes.includes(b.target), live = obs.current === b.target;
+      const preview = obs.studio && obs.preview === b.target && !live;
+      return { icon: 'scene', active: live, preview, missing: on && !exists,
+               sub: live ? (obs.studio ? 'Program' : 'Live') : preview ? 'Preview' : on && !exists ? 'not found' : '' };
+    }
+    case 'visibility': {
+      const v = obs.vis[pairKey(b.scene, b.target)];
+      if (!v) return { icon: 'eye', sub: on ? 'not found' : '', missing: on };
+      return { icon: v.enabled ? 'eye' : 'eyeOff', sub: v.enabled ? 'Visible' : 'Hidden', active: v.enabled };
+    }
+    case 'filter': {
+      const f = obs.filters[pairKey(b.target, b.filter)];
+      if (f === undefined) return { icon: 'filter', sub: on ? 'not found' : '', missing: on };
+      return { icon: 'filter', sub: f ? 'On' : 'Off', active: f };
+    }
+    case 'media': {
+      const st = obs.media[b.target];
+      if (st === undefined) return { icon: 'play', sub: on ? 'not found' : '', missing: on };
+      const playing = st === 'OBS_MEDIA_STATE_PLAYING';
+      const icon = { restart: 'restart', stop: 'stop', next: 'next', previous: 'prev' }[b.mode] || (playing ? 'pause' : 'play');
+      const sub = { OBS_MEDIA_STATE_PLAYING: 'Playing', OBS_MEDIA_STATE_PAUSED: 'Paused', OBS_MEDIA_STATE_ENDED: 'Ended' }[st] || 'Stopped';
+      return { icon, sub, active: playing };
+    }
+    case 'stream':
+      return { icon: 'stream', active: obs.streaming, confirm: isConfirming(b),
+               sub: isConfirming(b) ? 'Tap to stop' : obs.streamStat?.outputReconnecting ? 'Reconnecting' : obs.streaming ? tc(obs.streamStat) : 'Offline' };
+    case 'record':
+      return { icon: obs.recording ? 'recordOn' : 'record', active: obs.recording, confirm: isConfirming(b),
+               sub: isConfirming(b) ? 'Tap to stop' : obs.recording ? (obs.recPaused ? 'Paused ' : '') + tc(obs.recStat) : 'Stopped' };
+    case 'pause': return { icon: 'pause', active: obs.recPaused, sub: obs.recPaused ? 'Paused' : obs.recording ? '' : 'Not recording' };
+    case 'vcam': return { icon: 'camera', active: obs.vcam, sub: obs.vcam ? 'On' : 'Off' };
+    case 'studio': return { icon: 'studio', active: obs.studio, sub: obs.studio ? 'On' : 'Off' };
+    case 'transition':
+      return { icon: 'transition', missing: on && !obs.studio, sub: !on ? '' : obs.studio ? (obs.preview ? '→ ' + obs.preview : '') : 'Studio Mode off' };
+    case 'replay': return { icon: 'replay', sub: 'Save' };
+    case 'screenshot': return { icon: 'screenshot', sub: '' };
+    case 'hotkey': return { icon: 'keyboard', sub: '' };
+    case 'page': return { icon: 'folder', sub: '' };
+    case 'multi': {
+      const armed = b.undo && macroUndo.has(b);
+      const n = (b.steps || []).length;
+      return { icon: 'layers', active: armed, sub: running.has(b) ? 'Running…' : armed ? 'Tap to undo' : `${n} step${n === 1 ? '' : 's'}` };
+    }
+  }
+  return { icon: 'scene', sub: '' };
+}
+
+function setIcon(t, auto) {
+  const b = t.b;
+  const key = b.img ? 'img' : b.emoji ? 'e:' + b.emoji : 's:' + (b.icon || auto);
+  if (key === t.iconKey) return;
+  t.iconKey = key;
+  if (b.img) t.icon.replaceChildren(h('img', { src: b.img, alt: '' }));
+  else if (b.emoji) t.icon.replaceChildren(h('span', { class: 'emoji' }, b.emoji));
+  else t.icon.innerHTML = svg(b.icon || auto);
+}
+
+let updQueued = false;
+function scheduleUpdate() {
+  if (updQueued) return;
+  updQueued = true;
+  requestAnimationFrame(() => { updQueued = false; updateTiles(); });
+}
+function updateTiles() {
+  for (const t of tiles) {
+    if (t.vol) { updateVolumeTile(t); continue; }
+    const v = buttonView(t.b);
+    const cl = t.el.classList;
+    cl.toggle('active', !!v.active); cl.toggle('missing', !!v.missing); cl.toggle('confirm', !!v.confirm);
+    cl.toggle('preview', !!v.preview); cl.toggle('running', running.has(t.b));
+    t.sub.textContent = v.sub || '';
+    setIcon(t, v.icon);
+  }
+  applyThumbs();
+  renderStats();
+}
+function updateVolumeTile(t) {
+  const n = t.b.target, d = obs.volume[n], m = obs.mute[n];
+  t.el.classList.toggle('missing', identified && d === undefined);
+  t.el.classList.toggle('muted', !!m);
+  const key = m ? 'volumeOff' : 'volume';
+  if (t.muteKey !== key) { t.muteKey = key; t.muteBtn.innerHTML = svg(key); }
+  if (d !== undefined && !t.dragging) {
+    t.range.value = Math.round(Math.cbrt(dbToMul(d)) * 1000);
+    t.dbEl.textContent = fmtDb(d);
+  } else if (d === undefined) t.dbEl.textContent = identified ? 'not found' : '';
+}
+
+// Audio meters update ~20×/s, so they bypass the normal tile update.
+let meterQueued = false;
+function scheduleMeters() {
+  if (meterQueued) return;
+  meterQueued = true;
+  requestAnimationFrame(() => {
+    meterQueued = false;
+    const now = Date.now();
+    for (const t of tiles) {
+      if (!t.meter) continue;
+      const L = obs.levels[t.b.target], muted = !!obs.mute[t.b.target];
+      // When muted, show what the mic hears anyway, so you notice if you're talking into a muted mic.
+      const v = L ? (muted ? L.input : L.peak) : 0;
+      const pos = v > 0 ? clamp((20 * Math.log10(v) + 60) / 60, 0, 1) : 0;
+      t.meter.style.setProperty('--lv', pos.toFixed(3));
+      t.meter.classList.toggle('dim', muted);
+      if (t.b.type === 'mute') {
+        if (muted && pos > 0.55) t.talkUntil = now + 800;
+        t.el.classList.toggle('talking', muted && t.talkUntil > now);
+      }
+    }
+  });
+}
+
+/* ---------------- Live scene previews ---------------- */
+function applyThumbs() {
+  for (const t of tiles) {
+    if (t.b.type !== 'scene') continue;
+    const img = config.settings.thumbs && identified && !t.b.img && !t.b.emoji ? obs.thumbs[t.b.target] : null;
+    t.el.classList.toggle('thumb', !!img);
+    const bg = img ? `linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.6)), url("${img}")` : '';
+    if (t.bg !== bg) { t.bg = bg; t.el.style.backgroundImage = bg; }
+  }
+}
+(async function thumbLoop() {
+  for (;;) {
+    if (identified && config.settings.thumbs && document.visibilityState === 'visible') {
+      const scenes = [...new Set(page().buttons.filter(b => b.type === 'scene' && obs.scenes.includes(b.target)).map(b => b.target))];
+      for (const sc of scenes) {
+        try {
+          const r = await call('GetSourceScreenshot', { sourceName: sc, imageFormat: 'jpg', imageWidth: 320, imageCompressionQuality: 55 });
+          obs.thumbs[sc] = r.imageData;
+          applyThumbs();
+        } catch {}
+      }
+    }
+    await sleep(clamp(+config.settings.thumbInterval || 3, 1, 60) * 1000);
+  }
+})();
+
+/* ---------------- Swipe between pages ---------------- */
+let swipe = null, suppressClickUntil = 0;
+const grid = $('grid');
+grid.addEventListener('pointerdown', e => {
+  swipe = e.target.closest('input') ? null : { x: e.clientX, y: e.clientY, id: e.pointerId };
+}, true);
+grid.addEventListener('pointerup', e => {
+  if (!swipe || e.pointerId !== swipe.id) return;
+  const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+  swipe = null;
+  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5 && config.pages.length > 1) {
+    suppressClickUntil = Date.now() + 400;
+    goPage(curPage + (dx < 0 ? 1 : -1));
+  }
+}, true);
+grid.addEventListener('click', e => {
+  if (Date.now() < suppressClickUntil) { e.stopPropagation(); e.preventDefault(); }
+}, true);
+document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea')) e.preventDefault(); });
+
+/* ---------------- Controller & keyboard bindings ---------------- */
+// Standard gamepad mapping, which is how the Steam Deck's controls show up in the browser.
+const PAD_NAMES = ['A', 'B', 'X', 'Y', 'L1', 'R1', 'L2', 'R2', 'View', 'Menu', 'L3', 'R3', 'D-Up', 'D-Down', 'D-Left', 'D-Right', 'Steam'];
+const bindLong = b => b.kind === 'pad' ? `Controller: ${PAD_NAMES[b.index] || 'Button ' + b.index}` : `Key: ${b.code}`;
+const bindShort = b => b.kind === 'pad' ? (PAD_NAMES[b.index] || 'B' + b.index) : b.code.replace(/^Key|^Digit/, '');
+const sameBind = (x, y) => !!x && x.kind === y.kind && (y.kind === 'pad' ? x.index === y.index : x.code === y.code);
+const modalOpen = () => !!document.querySelector('.modal-bg.open');
+
+let capturing = null; // callback while a Bind… button waits for input
+function triggerBind(bind, down) {
+  if (capturing) { if (down) capturing(bind); return; }
+  if (editing || modalOpen()) return;
+  if (down && sameBind(config.settings.prevPage, bind)) return goPage(curPage - 1);
+  if (down && sameBind(config.settings.nextPage, bind)) return goPage(curPage + 1);
+  // Bindings work from any page; buttons on the current page win if two share a binding.
+  const order = [curPage, ...config.pages.keys()].filter((k, i, arr) => arr.indexOf(k) === i);
+  for (const k of order) {
+    const hits = config.pages[k].buttons.filter(b => sameBind(b.bind, bind));
+    if (!hits.length) continue;
+    for (const b of hits) {
+      if (b.type === 'ptt') down ? pttDown(b) : pttUp(b);
+      else if (down) pressButton(b);
+    }
+    return;
+  }
+}
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (capturing && e.code === 'Escape') { capturing(null); return; }
+  if (!capturing && e.code === 'Escape' && modalOpen()) { closeModals(); return; }
+  if (!capturing && e.target.closest?.('input, textarea, select')) return;
+  if (capturing) e.preventDefault();
+  triggerBind({ kind: 'key', code: e.code }, true);
+});
+window.addEventListener('keyup', e => {
+  if (!e.target.closest?.('input, textarea, select')) triggerBind({ kind: 'key', code: e.code }, false);
+});
+const padPrev = {};
+(function pollPads() {
+  for (const gp of navigator.getGamepads ? navigator.getGamepads() : []) {
+    if (!gp) continue;
+    const prev = padPrev[gp.index] || [];
+    gp.buttons.forEach((btn, idx) => {
+      if (btn.pressed !== !!prev[idx]) triggerBind({ kind: 'pad', index: idx }, btn.pressed);
+    });
+    padPrev[gp.index] = gp.buttons.map(b => b.pressed);
+  }
+  requestAnimationFrame(pollPads);
+})();
+
+/* ---------------- Action form (used for buttons and for macro steps) ---------------- */
+let formSeq = 0;
+const setList = (dl, items) => dl.replaceChildren(...[...new Set(items)].map(v => h('option', { value: v })));
+const field = (label, ...controls) => h('div', { class: 'field' }, label ? h('label', {}, label) : null, ...controls);
+async function loadHotkeys() {
+  if (!obs.hotkeys.length && identified) obs.hotkeys = (await call('GetHotkeyList').catch(() => ({ hotkeys: [] }))).hotkeys;
+  return obs.hotkeys;
+}
+
+function actionForm(init, isStep, onType) {
+  const id = ++formSeq;
+  let a = { ...init };
+  const typeSel = h('select', {});
+  for (const [k, t] of Object.entries(TYPES)) {
+    if (isStep ? t.buttonOnly : t.stepOnly) continue;
+    typeSel.append(h('option', { value: k }, (isStep && t.stepName) || t.name));
+  }
+  typeSel.value = TYPES[a.type] && !(isStep ? TYPES[a.type].buttonOnly : TYPES[a.type].stepOnly) ? a.type : 'mute';
+  const fields = h('div', { class: 'row' });
+  const root = h('div', {}, field(isStep ? null : 'Action', typeSel), fields);
+  let parts = {};
+
+  function textField(label, key, items, placeholder) {
+    const dl = h('datalist', { id: `dl${id}_${key}` });
+    const inp = h('input', { list: dl.id, value: a[key] ?? '', autocomplete: 'off', placeholder: placeholder || '' });
+    setList(dl, items || []);
+    fields.append(field(label, inp, dl));
+    parts[key] = inp;
+    return dl;
+  }
+  function build() {
+    const type = typeSel.value, t = TYPES[type];
+    fields.textContent = ''; parts = {};
+    if (t.scene) textField('Scene', 'scene', obs.scenes);
+    if (t.target) {
+      const [kind, label] = t.target;
+      const items = { input: obs.inputs, scene: obs.scenes, source: [...obs.inputs, ...obs.scenes], sourceOpt: [...obs.scenes, ...obs.inputs],
+                      page: config.pages.map(p => p.name) }[kind] || [];
+      const dl = textField(label, 'target', items, kind === 'sourceOpt' ? 'What’s live' : '');
+      if (kind === 'sceneItem') {
+        const upd = async () => {
+          const sc = parts.scene.value.trim();
+          const r = sc && identified ? await call('GetSceneItemList', { sceneName: sc }).catch(() => null) : null;
+          setList(dl, r ? r.sceneItems.map(x => x.sourceName) : []);
+        };
+        parts.scene.addEventListener('change', upd); upd();
+      }
+      if (kind === 'hotkey') loadHotkeys().then(list => setList(dl, list));
+    }
+    if (t.filter) {
+      const dl = textField('Filter', 'filter', []);
+      const upd = async () => {
+        const src = parts.target.value.trim();
+        const r = src && identified ? await call('GetSourceFilterList', { sourceName: src }).catch(() => null) : null;
+        setList(dl, r ? r.filters.map(f => f.filterName) : []);
+      };
+      parts.target.addEventListener('change', upd); upd();
+    }
+    if (t.modes) {
+      const sel = h('select', {}, t.modes.map(([v, l]) => h('option', { value: v }, l)));
+      sel.value = t.modes.some(m => m[0] === a.mode) ? a.mode : t.modes[0][0];
+      fields.append(field('What it does', sel));
+      parts.mode = sel;
+    }
+    if (t.db && isStep) {
+      parts.db = h('input', { type: 'number', min: -100, max: 26, step: 0.5, value: a.db ?? 0 });
+      fields.append(field('Volume (dB, 0 = full)', parts.db));
+    }
+    if (t.ms) {
+      parts.ms = h('input', { type: 'number', min: 0, max: 60000, step: 100, value: a.ms ?? 500 });
+      fields.append(field('Milliseconds', parts.ms));
+    }
+  }
+  function read() {
+    const out = { type: typeSel.value };
+    for (const [k, inp] of Object.entries(parts)) {
+      if (k === 'db' || k === 'ms') { const n = parseFloat(inp.value); if (!Number.isNaN(n)) out[k] = n; }
+      else { const v = inp.value.trim(); if (v) out[k] = v; }
+    }
+    return out;
+  }
+  typeSel.addEventListener('change', () => { a = { type: typeSel.value }; build(); onType?.(typeSel.value); });
+  build();
+  return { el: root, read, get type() { return typeSel.value; } };
+}
+
+/* ---------------- Button editor ---------------- */
+const SWATCHES = ['#e5484d', '#f76b15', '#f5a524', '#30a46c', '#12a594', '#5b8def', '#8e4ec6', '#d6409f', '#6f7787'];
+let edit = null; // { page, i, form, steps: [form], bind, img, color }
+
+function renderSwatches() {
+  const box = $('swatches');
+  const custom = h('input', { type: 'color', value: edit.color, title: 'Custom color', oninput: e => { edit.color = e.target.value; renderSwatches(); } });
+  box.replaceChildren(...SWATCHES.map(c => h('button', {
+    class: 'swatch' + (c === edit.color ? ' on' : ''), style: `background:${c}`, title: c,
+    onclick: () => { edit.color = c; renderSwatches(); },
+  })), custom);
+}
+function renderSteps(steps) {
+  edit.steps = [];
+  const list = $('steps');
+  list.textContent = '';
+  steps.forEach((s, k) => {
+    const f = actionForm(s, true);
+    edit.steps.push(f);
+    list.append(h('div', { class: 'step' },
+      h('div', { class: 'stephead' }, h('b', {}, `Step ${k + 1}`), h('div', { class: 'spacer' }),
+        h('button', { class: 'hbtn sm', onclick: () => moveStep(k, -1) }, '▲'),
+        h('button', { class: 'hbtn sm', onclick: () => moveStep(k, 1) }, '▼'),
+        h('button', { class: 'hbtn sm danger', onclick: () => { const all = readSteps(); all.splice(k, 1); renderSteps(all); } }, '✕')),
+      f.el));
+  });
+}
+const readSteps = () => edit.steps.map(f => f.read());
+function moveStep(k, d) {
+  const all = readSteps(), j = k + d;
+  if (j < 0 || j >= all.length) return;
+  [all[k], all[j]] = [all[j], all[k]];
+  renderSteps(all);
+}
+$('addStep').addEventListener('click', () => renderSteps([...readSteps(), { type: 'scene' }]));
+
+function openEditor(pageIdx, i) {
+  const b = i >= 0 ? config.pages[pageIdx].buttons[i] : { type: 'mute', color: '#5b8def' };
+  edit = { page: pageIdx, i, bind: b.bind || null, img: b.img || '', color: b.color || '#5b8def', steps: [] };
+  $('editTitle').textContent = i >= 0 ? 'Edit button' : 'New button';
+  $('fLabel').value = b.label || '';
+  $('fPage').replaceChildren(...config.pages.map((p, k) => h('option', { value: k }, p.name)));
+  $('fPage').value = pageIdx;
+  $('fIcon').replaceChildren(h('option', { value: '' }, 'Automatic'), ...Object.entries(ICON_NAMES).map(([k, n]) => h('option', { value: k }, n)));
+  $('fIcon').value = b.icon || '';
+  $('fEmoji').value = b.emoji || '';
+  $('imgPrev').src = edit.img;
+  renderSwatches();
+  edit.form = actionForm(b, false, type => { $('macroWrap').hidden = type !== 'multi'; });
+  $('actionHost').replaceChildren(edit.form.el);
+  $('macroWrap').hidden = b.type !== 'multi';
+  renderSteps(b.type === 'multi' ? b.steps || [] : []);
+  $('fUndo').checked = !!b.undo;
+  $('bindText').textContent = edit.bind ? bindLong(edit.bind) : 'None';
+  for (const id of ['deleteBtn', 'leftBtn', 'rightBtn', 'dupBtn']) $(id).hidden = i < 0;
+  $('editModal').classList.add('open');
+}
+function closeEditor() {
+  capturing = null;
+  $('bindBtn').textContent = 'Bind…';
+  $('editModal').classList.remove('open');
+}
+function closeModals() {
+  closeEditor();
+  for (const id of ['settingsModal', 'pageModal']) $(id).classList.remove('open');
+}
+$('bindBtn').addEventListener('click', () => {
+  $('bindBtn').textContent = 'Press a button…';
+  $('bindText').textContent = 'Press a controller button or key (Esc cancels)';
+  capturing = bind => {
+    capturing = null;
+    $('bindBtn').textContent = 'Bind…';
+    if (bind) edit.bind = bind;
+    $('bindText').textContent = edit.bind ? bindLong(edit.bind) : 'None';
+  };
+});
+$('unbindBtn').addEventListener('click', () => { edit.bind = null; $('bindText').textContent = 'None'; });
+$('imgBtn').addEventListener('click', () => $('imgFile').click());
+$('imgClear').addEventListener('click', () => { edit.img = ''; $('imgPrev').src = ''; });
+$('imgFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    // Shrink to a small square so the layout stays light.
+    const S = 128, c = document.createElement('canvas');
+    c.width = c.height = S;
+    const s = Math.min(img.width, img.height);
+    c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, S, S);
+    edit.img = c.toDataURL('image/png');
+    $('imgPrev').src = edit.img;
+    URL.revokeObjectURL(img.src);
+  };
+  img.onerror = () => toast('That image couldn’t be loaded');
+  img.src = URL.createObjectURL(file);
+});
+$('cancelBtn').addEventListener('click', closeEditor);
+$('saveBtn').addEventListener('click', () => {
+  const b = { label: $('fLabel').value.trim(), color: edit.color, ...edit.form.read() };
+  if ($('fIcon').value) b.icon = $('fIcon').value;
+  if ($('fEmoji').value.trim()) b.emoji = $('fEmoji').value.trim();
+  if (edit.img) b.img = edit.img;
+  if (edit.bind) b.bind = edit.bind;
+  if (b.type === 'multi') { b.steps = readSteps(); b.undo = $('fUndo').checked; }
+  if (!b.label) b.label = b.target || TYPES[b.type].name;
+  const dest = +$('fPage').value;
+  const src = config.pages[edit.page].buttons;
+  if (edit.i >= 0 && dest === edit.page) src[edit.i] = b;
+  else {
+    if (edit.i >= 0) src.splice(edit.i, 1);
+    config.pages[dest].buttons.push(b);
+  }
+  saveConfig(); closeEditor(); renderLayout();
+  if (identified) refreshButtonStates();
+});
+$('deleteBtn').addEventListener('click', () => {
+  config.pages[edit.page].buttons.splice(edit.i, 1);
+  saveConfig(); closeEditor(); renderLayout();
+});
+$('dupBtn').addEventListener('click', () => {
+  const list = config.pages[edit.page].buttons;
+  list.splice(edit.i + 1, 0, structuredClone(list[edit.i]));
+  saveConfig(); closeEditor(); renderLayout();
+});
+function moveButton(d) {
+  const list = config.pages[edit.page].buttons, j = edit.i + d;
+  if (j < 0 || j >= list.length) return;
+  [list[edit.i], list[j]] = [list[j], list[edit.i]];
+  edit.i = j; saveConfig(); renderLayout();
+}
+$('leftBtn').addEventListener('click', () => moveButton(-1));
+$('rightBtn').addEventListener('click', () => moveButton(1));
+
+/* ---------------- Pages ---------------- */
+let pageEdit = -1;
+function addPage() {
+  config.pages.push({ name: `Page ${config.pages.length + 1}`, buttons: [] });
+  saveConfig();
+  goPage(config.pages.length - 1);
+  openPageEditor(curPage);
+}
+function openPageEditor(k) {
+  pageEdit = k;
+  $('pName').value = config.pages[k].name;
+  $('pDelete').hidden = config.pages.length < 2;
+  $('pageModal').classList.add('open');
+}
+$('pCancel').addEventListener('click', () => $('pageModal').classList.remove('open'));
+$('pSave').addEventListener('click', () => {
+  const old = config.pages[pageEdit].name, name = $('pName').value.trim() || old;
+  config.pages[pageEdit].name = name;
+  // Keep "Go to page" buttons pointing at the renamed page.
+  const visit = a => { if (a.type === 'page' && a.target === old) a.target = name; (a.steps || []).forEach(visit); };
+  allButtons().forEach(visit);
+  saveConfig(); renderLayout();
+  $('pageModal').classList.remove('open');
+});
+function movePage(d) {
+  const j = pageEdit + d;
+  if (j < 0 || j >= config.pages.length) return;
+  [config.pages[pageEdit], config.pages[j]] = [config.pages[j], config.pages[pageEdit]];
+  pageEdit = j; saveConfig(); goPage(j);
+}
+$('pLeft').addEventListener('click', () => movePage(-1));
+$('pRight').addEventListener('click', () => movePage(1));
+$('pDelete').addEventListener('click', () => {
+  const p = config.pages[pageEdit];
+  if (p.buttons.length && !confirm(`Delete "${p.name}" and its ${p.buttons.length} button(s)?`)) return;
+  config.pages.splice(pageEdit, 1);
+  saveConfig(); $('pageModal').classList.remove('open'); goPage(Math.min(pageEdit, config.pages.length - 1));
+});
+
+/* ---------------- Header & settings ---------------- */
+$('editBtn').addEventListener('click', () => {
+  editing = !editing;
+  document.body.classList.toggle('editing', editing);
+  $('editBtn').classList.toggle('on', editing);
+  $('editBtn').textContent = editing ? 'Done' : 'Edit';
+  renderLayout();
+});
+$('fsBtn').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+});
+function showPageBinds() {
+  $('sPrevText').textContent = config.settings.prevPage ? bindLong(config.settings.prevPage) : 'None';
+  $('sNextText').textContent = config.settings.nextPage ? bindLong(config.settings.nextPage) : 'None';
+}
+function openSettings() {
+  const s = config.settings;
+  $('sHost').value = config.conn.host;
+  $('sPort').value = config.conn.port;
+  $('sPass').value = config.conn.password;
+  $('sThumbs').checked = s.thumbs;
+  $('sThumbInt').value = String(s.thumbInterval);
+  $('sStats').checked = s.stats;
+  $('sStudioPreview').checked = s.studioPreview;
+  showPageBinds();
+  $('storageHint').textContent = serverMode
+    ? 'Your layout is saved on the PC (by serve.py), so every device that opens this page shares it.'
+    : 'Your layout is saved in this browser only. Run serve.py on the PC to keep it there instead.';
+  $('sJson').value = JSON.stringify(layoutData(), null, 2);
+  $('settingsModal').classList.add('open');
+}
+$('settingsBtn').addEventListener('click', openSettings);
+$('closeSettingsBtn').addEventListener('click', () => { capturing = null; $('settingsModal').classList.remove('open'); });
+$('connectBtn').addEventListener('click', () => {
+  config.conn = { host: $('sHost').value.trim(), port: parseInt($('sPort').value, 10) || 4455, password: $('sPass').value };
+  saveLocal(); connect();
+  $('settingsModal').classList.remove('open');
+});
+$('disconnectBtn').addEventListener('click', disconnect);
+const settingInputs = { sThumbs: ['thumbs', 'checked'], sStats: ['stats', 'checked'], sStudioPreview: ['studioPreview', 'checked'], sThumbInt: ['thumbInterval', 'value'] };
+for (const [id, [key, prop]] of Object.entries(settingInputs)) {
+  $(id).addEventListener('change', () => {
+    config.settings[key] = prop === 'value' ? +$(id).value : $(id).checked;
+    saveConfig(); updateTiles();
+  });
+}
+for (const [key, pre] of [['prevPage', 'sPrev'], ['nextPage', 'sNext']]) {
+  $(pre + 'Bind').addEventListener('click', () => {
+    $(pre + 'Text').textContent = 'Press a controller button or key (Esc cancels)';
+    capturing = bind => { capturing = null; if (bind) { config.settings[key] = bind; saveConfig(); } showPageBinds(); };
+  });
+  $(pre + 'Clear').addEventListener('click', () => { config.settings[key] = null; saveConfig(); showPageBinds(); });
+}
+$('addScenesBtn').addEventListener('click', () => {
+  if (!identified) { toast('Connect to OBS first'); return; }
+  const have = new Set(allButtons().filter(b => b.type === 'scene').map(b => b.target));
+  let added = 0;
+  for (const s of obs.scenes) {
+    if (have.has(s)) continue;
+    page().buttons.push({ label: s, type: 'scene', target: s, color: SWATCHES[(added++ + 5) % SWATCHES.length] });
+  }
+  saveConfig(); renderLayout();
+  $('sJson').value = JSON.stringify(layoutData(), null, 2);
+  toast(added ? `Added ${added} scene button${added > 1 ? 's' : ''}` : 'All scenes already have buttons');
+});
+$('importBtn').addEventListener('click', () => {
+  let data;
+  try { data = JSON.parse($('sJson').value); } catch { toast('That isn’t valid layout JSON'); return; }
+  Object.assign(config, normalizeLayout(data));
+  saveConfig(); renderLayout();
+  if (identified) refreshButtonStates();
+  toast('Layout imported');
+});
+$('resetBtn').addEventListener('click', () => {
+  if (!confirm('Replace all your pages and buttons with the default layout?')) return;
+  config.pages = defaultPages(); saveConfig();
+  $('sJson').value = JSON.stringify(layoutData(), null, 2);
+  renderLayout();
+  if (identified) refreshButtonStates();
+});
+
+// Keep the Deck's screen awake while the page is open (only works where the browser allows it).
+async function keepAwake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+/* ---------------- Start ---------------- */
+(async () => {
+  await initServer();
+  // ?host=1.2.3.4&port=4455&password=... lets a Steam shortcut preconfigure the connection.
+  const q = new URLSearchParams(location.search);
+  if (q.get('host')) {
+    config.conn.host = q.get('host');
+    if (q.get('port')) config.conn.port = parseInt(q.get('port'), 10) || 4455;
+    if (q.has('password')) config.conn.password = q.get('password');
+    saveLocal();
+  }
+  renderLayout();
+  keepAwake();
+  if (config.conn.host) connect(); else { setStatus('bad', 'Not set up'); openSettings(); }
+})();
+</script>
+</body>
+</html>
